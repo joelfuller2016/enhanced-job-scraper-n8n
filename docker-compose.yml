@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  job-scraper:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      # Optional: Add your pracuj.pl credentials for better results
+      - EMAIL=${EMAIL:-}
+      - PASSWORD=${PASSWORD:-}
+      # API Configuration
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Persist logs and data
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./output:/app/output
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - job-scraper-network
+
+  # Optional: Add a simple web interface (nginx serving static files)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - job-scraper
+    restart: unless-stopped
+    networks:
+      - job-scraper-network
+
+networks:
+  job-scraper-network:
+    driver: bridge
+
+volumes:
+  job-data:
+  job-logs:
