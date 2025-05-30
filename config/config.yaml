@@ -1,0 +1,103 @@
+# Enhanced Configuration for Multi-Source Job Scraper
+
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 5000
+  debug: false
+  cors_origins: ["*"]
+  rate_limit: "100 per minute"
+
+# Chrome/Selenium Configuration
+chrome:
+  headless: true
+  window_size: "1920,1080"
+  timeout: 30
+  page_load_timeout: 30
+  implicit_wait: 10
+  options:
+    - "--no-sandbox"
+    - "--disable-dev-shm-usage"
+    - "--disable-gpu"
+    - "--disable-extensions"
+    - "--disable-logging"
+    - "--disable-plugins"
+    - "--disable-web-security"
+    - "--ignore-certificate-errors"
+    - "--allow-running-insecure-content"
+    - "--disable-background-timer-throttling"
+    - "--disable-backgrounding-occluded-windows"
+    - "--disable-renderer-backgrounding"
+
+# Job Sources Configuration
+sources:
+  pracuj:
+    enabled: true
+    base_url: "https://it.pracuj.pl"
+    search_path: "/praca/{keywords};kw/ostatnich%2024h;p,{page}/polska;ct,1"
+    rate_limit: 2  # seconds between requests
+    max_pages: 10
+    selectors:
+      offers_section: "div[data-test='section-offers']"
+      job_offer: "div[data-test='default-offer']"
+      title: "h2[data-test='offer-title']"
+      company: "h3[data-test='text-company-name']"
+      location: "h4[data-test='text-region']"
+      technologies: "span[data-test='technologies-item']"
+      link: "a[data-test='link-offer']"
+      applied: "div[data-test='applied-text']"
+      saved: "button[data-test='add-to-favourites'][data-test-checkboxstate='true']"
+
+  linkedin:
+    enabled: false  # To be implemented
+    base_url: "https://www.linkedin.com"
+    requires_auth: true
+    rate_limit: 5
+    max_pages: 5
+
+  indeed:
+    enabled: false  # To be implemented
+    base_url: "https://indeed.com"
+    rate_limit: 3
+    max_pages: 10
+
+# Search Configuration
+search:
+  default_keywords: ["python engineer", "backend developer", "software engineer"]
+  default_location: "poland"
+  max_results_per_source: 100
+  deduplication_threshold: 0.8  # Similarity threshold for duplicate detection
+
+# Data Processing
+processing:
+  score_weights:
+    title_match: 0.3
+    technology_match: 0.4
+    location_preference: 0.2
+    freshness: 0.1
+  
+  filters:
+    min_score: 0.5
+    exclude_keywords: ["intern", "praktyki", "stażysta"]
+    required_technologies: []
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} | {message}"
+  file: "logs/job_scraper.log"
+  rotation: "1 week"
+  retention: "1 month"
+
+# Database Configuration
+database:
+  type: "sqlite"
+  path: "data/jobs.db"
+  enable_caching: true
+  cache_duration: 3600  # seconds
+
+# n8n Integration
+n8n:
+  webhook_timeout: 30
+  batch_size: 5
+  max_telegram_message_length: 4000
