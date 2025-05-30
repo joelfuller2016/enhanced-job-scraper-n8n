@@ -1,0 +1,473 @@
+{
+  "name": "Free Job Scraper Bot - Multi Trigger",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [280, 300],
+      "id": "telegram-webhook",
+      "name": "Telegram Webhook",
+      "credentials": {
+        "telegramApi": {
+          "id": "your-telegram-credentials-id",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [280, 100],
+      "id": "manual-trigger",
+      "name": "Manual Trigger"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9,17 * * 1-5"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [280, 200],
+      "id": "schedule-trigger",
+      "name": "Scheduled Trigger (9AM & 5PM Weekdays)"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "job-search",
+        "options": {
+          "noResponseBody": false
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [280, 400],
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "webhookId": "job-search-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Free job intent detection without AI APIs\nconst input = $input.first();\nlet userMessage = '';\nlet chatId = null;\nlet triggerType = 'unknown';\nlet keywords = 'python engineer';\nlet isJobRequest = false;\n\n// Determine trigger type and extract data\nif (input.json.message) {\n  // Telegram trigger\n  triggerType = 'telegram';\n  userMessage = input.json.message.text || '';\n  chatId = input.json.message.chat.id;\n} else if (input.json.body) {\n  // Webhook trigger\n  triggerType = 'webhook';\n  const body = typeof input.json.body === 'string' ? JSON.parse(input.json.body) : input.json.body;\n  userMessage = body.message || body.query || '';\n  keywords = body.keywords || keywords;\n  chatId = body.chat_id || null;\n  isJobRequest = true; // Webhook always triggers job search\n} else {\n  // Manual or scheduled trigger\n  triggerType = input.json.node ? 'scheduled' : 'manual';\n  isJobRequest = true; // Manual/scheduled always trigger job search\n  userMessage = 'Job search requested';\n}\n\n// Simple keyword-based job detection for Telegram messages\nif (triggerType === 'telegram') {\n  const jobKeywords = [\n    'job', 'jobs', 'work', 'position', 'career', 'employment', \n    'hiring', 'opening', 'opportunity', 'vacancy', 'praca'\n  ];\n  \n  const techKeywords = [\n    'python', 'javascript', 'java', 'developer', 'engineer', \n    'programmer', 'software', 'backend', 'frontend', 'fullstack'\n  ];\n  \n  const message = userMessage.toLowerCase();\n  \n  isJobRequest = jobKeywords.some(keyword => message.includes(keyword)) ||\n                 techKeywords.some(keyword => message.includes(keyword));\n  \n  // Extract keywords from user message if present\n  if (isJobRequest) {\n    const foundTech = techKeywords.find(tech => message.includes(tech));\n    if (foundTech) {\n      keywords = foundTech === 'javascript' ? 'javascript developer' : \n                foundTech === 'java' ? 'java developer' :\n                foundTech + ' engineer';\n    }\n  }\n}\n\n// Generate response\nlet response = '';\nif (isJobRequest) {\n  response = triggerType === 'telegram' ? \n    '🔍 Searching for job opportunities...' :\n    'Job search initiated';\n} else {\n  // Non-job related responses for Telegram\n  const greetings = ['hello', 'hi', 'hey', 'good morning', 'good afternoon'];\n  const isGreeting = greetings.some(greeting => userMessage.toLowerCase().includes(greeting));\n  \n  if (isGreeting) {\n    response = '👋 Hello! I can help you find job opportunities. Just ask me about jobs, or mention technologies like \"python jobs\" or \"javascript positions\".';\n  } else {\n    response = '🤖 I\\'m a job search assistant. Ask me about job opportunities or specific technologies like Python, JavaScript, etc.';\n  }\n}\n\nreturn [{\n  json: {\n    is_job_related: isJobRequest,\n    answer: response,\n    user_message: userMessage,\n    chat_id: chatId,\n    trigger_type: triggerType,\n    keywords: keywords,\n    search_initiated: isJobRequest\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [540, 250],
+      "id": "free-intent-detector",
+      "name": "Free Intent Detector"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "job-search-condition",
+              "leftValue": "={{ $json.is_job_related }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [780, 250],
+      "id": "job-decision",
+      "name": "Job Search Decision"
+    },
+    {
+      "parameters": {
+        "url": "={{ $vars.JOB_API_URL || 'http://localhost:5000' }}/jobs",
+        "options": {
+          "timeout": 60000,
+          "retry": {
+            "enabled": true,
+            "maxRetries": 2,
+            "retryDelay": 3000
+          },
+          "redirect": {
+            "followRedirects": true,
+            "maxRedirects": 3
+          }
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "keywords",
+              "value": "={{ $json.keywords }}"
+            },
+            {
+              "name": "max_results",
+              "value": "15"
+            },
+            {
+              "name": "fresh_only",
+              "value": "true"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1020, 150],
+      "id": "job-api-call",
+      "name": "Job API Call"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process jobs without external dependencies\nconst input = $input.first();\nconst triggerData = $('Free Intent Detector').first().json;\n\ntry {\n  if (!input || !input.json) {\n    throw new Error('No API response received');\n  }\n  \n  const response = input.json;\n  \n  // Handle API errors\n  if (response.success === false) {\n    const errorMsg = response.error || 'Unknown API error';\n    return [{\n      json: {\n        success: false,\n        message: `❌ Error: ${errorMsg}`,\n        trigger_type: triggerData.trigger_type,\n        chat_id: triggerData.chat_id\n      }\n    }];\n  }\n  \n  // Handle empty results\n  if (!response.jobs || response.jobs.length === 0) {\n    return [{\n      json: {\n        success: true,\n        message: `🔍 No jobs found for \"${triggerData.keywords}\". Try different keywords or check back later!`,\n        jobs_found: 0,\n        trigger_type: triggerData.trigger_type,\n        chat_id: triggerData.chat_id\n      }\n    }];\n  }\n  \n  // Process jobs into smaller batches\n  const jobs = response.jobs;\n  const batchSize = 3;\n  const maxJobs = 15;\n  const jobsToProcess = jobs.slice(0, maxJobs);\n  \n  // Create summary for non-Telegram triggers\n  if (triggerData.trigger_type !== 'telegram') {\n    const summary = {\n      total_jobs: jobsToProcess.length,\n      keywords: triggerData.keywords,\n      timestamp: new Date().toISOString(),\n      jobs: jobsToProcess.map(job => ({\n        title: job.title,\n        company: job.company,\n        location: job.location,\n        technologies: job.technologies,\n        link: job.link,\n        score: job.score\n      }))\n    };\n    \n    return [{\n      json: {\n        success: true,\n        summary: summary,\n        message: `Found ${jobsToProcess.length} jobs for ${triggerData.keywords}`,\n        trigger_type: triggerData.trigger_type\n      }\n    }];\n  }\n  \n  // Create batches for Telegram\n  const batches = [];\n  \n  for (let i = 0; i < jobsToProcess.length; i += batchSize) {\n    const batch = jobsToProcess.slice(i, i + batchSize);\n    \n    // Simple text formatting (no MarkdownV2 complexity)\n    const message = batch.map((job, index) => {\n      const title = job.title || 'No title';\n      const company = job.company || 'Unknown company';\n      const location = job.location || 'Location not specified';\n      const technologies = job.technologies && job.technologies.length > 0 \n        ? job.technologies.join(', ')\n        : 'Technologies not listed';\n      \n      let jobText = `📌 ${title}\\n`;\n      jobText += `🏢 Company: ${company}\\n`;\n      jobText += `📍 Location: ${location}\\n`;\n      jobText += `💡 Tech: ${technologies}\\n`;\n      \n      if (job.link && job.link !== 'N/A' && job.link !== '') {\n        jobText += `🔗 Link: ${job.link}\\n`;\n      }\n      \n      if (job.score && job.score > 0) {\n        jobText += `⭐ Match: ${Math.round(job.score * 100)}%\\n`;\n      }\n      \n      return jobText;\n    }).join('\\n' + '-'.repeat(30) + '\\n\\n');\n    \n    batches.push({\n      json: {\n        message: message,\n        batch_number: Math.floor(i / batchSize) + 1,\n        total_batches: Math.ceil(jobsToProcess.length / batchSize),\n        jobs_in_batch: batch.length,\n        chat_id: triggerData.chat_id,\n        trigger_type: triggerData.trigger_type\n      }\n    });\n  }\n  \n  return batches;\n  \n} catch (error) {\n  console.error('Job processing error:', error);\n  \n  return [{\n    json: {\n      success: false,\n      message: `❌ Error processing jobs: ${error.message}`,\n      error: error.message,\n      trigger_type: triggerData.trigger_type,\n      chat_id: triggerData.chat_id\n    }\n  }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1260, 150],
+      "id": "job-formatter",
+      "name": "Free Job Formatter"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "telegram-check",
+              "leftValue": "={{ $json.trigger_type }}",
+              "rightValue": "telegram",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1500, 150],
+      "id": "output-router",
+      "name": "Output Router"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1740, 50],
+      "id": "telegram-batcher",
+      "name": "Telegram Batcher"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Add delays between Telegram messages\nconst batchNumber = $json.batch_number || 1;\nconst delay = (batchNumber - 1) * 1500; // 1.5 seconds between batches\n\nif (delay > 0) {\n  await new Promise(resolve => setTimeout(resolve, delay));\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, 50],
+      "id": "telegram-delay",
+      "name": "Telegram Rate Limit"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "disable_web_page_preview": true
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2220, 50],
+      "id": "telegram-sender",
+      "name": "Send to Telegram",
+      "credentials": {
+        "telegramApi": {
+          "id": "your-telegram-credentials-id",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.answer }}",
+        "additionalFields": {
+          "disable_web_page_preview": true
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1020, 350],
+      "id": "chat-response",
+      "name": "Send Chat Response",
+      "credentials": {
+        "telegramApi": {
+          "id": "your-telegram-credentials-id",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1740, 250],
+      "id": "webhook-response",
+      "name": "Webhook Response"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $vars.DEFAULT_CHAT_ID || 'YOUR_CHAT_ID' }}",
+        "text": "🕒 Scheduled job search completed!\\n\\nFound {{ $json.summary.total_jobs || 0 }} opportunities for {{ $json.summary.keywords }}.\\n\\nKeywords: {{ $json.summary.keywords }}\\nTime: {{ $json.summary.timestamp }}",
+        "additionalFields": {
+          "disable_web_page_preview": true
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2220, 350],
+      "id": "scheduled-notification",
+      "name": "Scheduled Notification",
+      "credentials": {
+        "telegramApi": {
+          "id": "your-telegram-credentials-id",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "scheduled-check",
+              "leftValue": "={{ $json.trigger_type }}",
+              "rightValue": "scheduled",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1980, 250],
+      "id": "scheduled-check",
+      "name": "Scheduled Check"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Webhook": {
+      "main": [
+        [
+          {
+            "node": "Free Intent Detector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Free Intent Detector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scheduled Trigger (9AM & 5PM Weekdays)": {
+      "main": [
+        [
+          {
+            "node": "Free Intent Detector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Free Intent Detector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Free Intent Detector": {
+      "main": [
+        [
+          {
+            "node": "Job Search Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job Search Decision": {
+      "main": [
+        [
+          {
+            "node": "Job API Call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Chat Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job API Call": {
+      "main": [
+        [
+          {
+            "node": "Free Job Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Free Job Formatter": {
+      "main": [
+        [
+          {
+            "node": "Output Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Output Router": {
+      "main": [
+        [
+          {
+            "node": "Telegram Batcher",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Scheduled Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Batcher": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Telegram Rate Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Rate Limit": {
+      "main": [
+        [
+          {
+            "node": "Send to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scheduled Check": {
+      "main": [
+        [
+          {
+            "node": "Scheduled Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": {
+      "enabled": false
+    }
+  },
+  "versionId": "free-job-scraper-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": ["job-search", "free", "telegram", "webhook", "scheduled"]
+}
